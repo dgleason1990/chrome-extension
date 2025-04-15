@@ -1,0 +1,30 @@
+{
+  "name": "SQL-Buddy Extension",
+  "version": "1.0.0",
+  "manifest_version": 3,
+  "description": "Chat interface for SQL generation with visualizations",
+  "permissions": ["storage", "identity", "sidePanel"],
+  "action": {
+    "default_title": "SQL-Buddy",
+    "default_icon": {
+      "16": "assets/icons/icon16.png",
+      "48": "assets/icons/icon48.png",
+      "72": "assets/icons/icon72.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "host_permissions": [
+    "http://127.0.0.1:8000/*",
+    "https://api.sql-buddy.com/*"
+  ],
+  "icons": {
+    "16": "assets/icons/icon16.png",
+    "48": "assets/icons/icon48.png",
+    "72": "assets/icons/icon72.png"
+  }
+}
