@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { ChatInput, ChatHistory, VisualizationRenderer } from "../ui/components";
+import { ChatInput, ChatHistory } from "../ui/components";
 import { useAuth } from "../lib/hooks/useAuth";
 import apiClient from "../lib/api/api-client";
 import { useStorage } from "../lib/hooks/useStorage";
@@ -8,6 +8,7 @@ import { Input } from "../ui/components/input";
 import { Label } from "../ui/components/label";
 import { Shield, ShieldOff } from "lucide-react";
 import { Box, CircularProgress, Typography } from "@mui/material";
+import { ChartConfiguration } from "chart.js";
 
 interface Message {
   id: string;
@@ -18,7 +19,7 @@ interface Message {
 }
 
 interface Visualization {
-  code: string;
+  code: ChartConfiguration;
   data: Record<string, unknown>[];
 }
 
@@ -102,6 +103,16 @@ const SidePanel: React.FC = () => {
         sql_results: persistentSqlResults || [],
       });
 
+      // Check if response contains an API error message
+      if (response.message && (response.limit_type || response.tier)) {
+        addMessage({
+          type: "system",
+          content: response.message || "An API error occurred",
+        });
+        setLoading(false);
+        return;
+      }
+
       if (response.sql_results && response.sql_results.length > 0) {
         // Update persistentSqlResults before adding the message
         setPersistentSqlResults(response.sql_results);
@@ -173,10 +184,64 @@ const SidePanel: React.FC = () => {
       }
     } catch (error) {
       console.error("Error sending message:", error);
-      addMessage({
-        type: "system",
-        content: `Error: ${error instanceof Error ? error.message : "Unknown error occurred"}`,
-      });
+      
+      // If error is from API and has response data with message
+      if (error instanceof Error && 'response' in error) {
+        // Enhanced error handling for API errors
+        const apiError = error as Error & { 
+          response?: { 
+            status: number; 
+            data: any 
+          }; 
+        };
+        
+        const errorData = apiError.response?.data;
+        
+        // Check for the nested detail structure first (as shown in the network tab)
+        if (errorData?.detail) {
+          if (typeof errorData.detail === 'object') {
+            // Handle detail object with message property
+            const detailMessage = errorData.detail.message || "API limit reached";
+            const limitType = errorData.detail.limit_type || "";
+            const tier = errorData.detail.tier || "";
+            
+            // Format a more useful error message for rate limits
+            if (limitType === "api_request") {
+              addMessage({
+                type: "system",
+                content: `${detailMessage} You are on the ${tier} tier. Please try again later or upgrade your plan.`
+              });
+            } else {
+              addMessage({
+                type: "system",
+                content: detailMessage
+              });
+            }
+          } else {
+            // Handle string detail
+            addMessage({
+              type: "system",
+              content: errorData.detail
+            });
+          }
+        } else {
+          // Fall back to previous error message extraction logic
+          const errorMessage = errorData?.message || 
+                              apiError.message || 
+                              "An unexpected error occurred";
+          
+          addMessage({
+            type: "system",
+            content: `Error (${apiError.response?.status || 'unknown'}): ${errorMessage}`
+          });
+        }
+      } else {
+        // Generic error handling
+        addMessage({
+          type: "system",
+          content: `Error: ${error instanceof Error ? error.message : "Unknown error occurred"}`,
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -323,7 +388,7 @@ const SidePanel: React.FC = () => {
           </div>
 
           <div className="border-t bg-background p-4">
-            <div className="flex items-center gap-2 mb-4">
+            <div className="flex items-center justify-end gap-2 mb-4">
               <Button
                 variant={executeSQL ? "default" : "outline"}
                 size="sm"

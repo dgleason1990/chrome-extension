@@ -1,3 +1,5 @@
+import { ChartConfiguration } from "chart.js";
+
 /**
  * Authentication related type definitions
  */
@@ -103,11 +105,15 @@ export interface QueryResponse {
   sql_results?: Record<string, unknown>[];
   summary?: string;
   full_reasoning?: string;
-  visualization_code?: string;
+  visualization_code?: ChartConfiguration;
   detail?: {
     answer?: string;
     reasoning?: string;
   };
+  message?: string;
+  limit_type?: string;
+  tier?: string;
+  data?: any;
 }
 
 /**

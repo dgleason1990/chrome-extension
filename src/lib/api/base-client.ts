@@ -1,4 +1,14 @@
+/// <reference types="chrome"/>
 import { Token } from './types';
+
+// Define a type for Chrome storage
+interface ChromeStorage {
+  local: {
+    get: (keys: string[], callback: (result: any) => void) => void;
+    set: (items: Record<string, any>, callback?: () => void) => void;
+    remove: (keys: string[], callback?: () => void) => void;
+  };
+}
 
 /**
  * Base API client that handles common functionality like authentication and request handling
@@ -61,19 +71,27 @@ export class BaseApiClient {
     };
 
     // Store tokens in Chrome storage for persistence
-    chrome.storage.local.set({
-      access_token: token.access_token,
-      refresh_token: token.refresh_token || null,
-      token_expiry: this.tokenExpiry,
-    });
+    const storage = this.getChromeStorage();
+    if (storage) {
+      storage.local.set({
+        access_token: token.access_token,
+        refresh_token: token.refresh_token || null,
+        token_expiry: this.tokenExpiry,
+      });
+    }
   }
 
   /**
    * Initialize tokens from Chrome storage
    */
   async initAuthFromStorage(): Promise<boolean> {
+    const storage = this.getChromeStorage();
+    if (!storage) {
+      return Promise.resolve(false);
+    }
+    
     return new Promise<boolean>((resolve) => {
-      chrome.storage.local.get(
+      storage.local.get(
         ['access_token', 'refresh_token', 'token_expiry'],
         (result) => {
           if (result.access_token) {
@@ -115,11 +133,14 @@ export class BaseApiClient {
     this.headers = newHeaders;
 
     // Clear from Chrome storage
-    chrome.storage.local.remove([
-      'access_token',
-      'refresh_token',
-      'token_expiry',
-    ]);
+    const storage = this.getChromeStorage();
+    if (storage) {
+      storage.local.remove([
+        'access_token',
+        'refresh_token',
+        'token_expiry',
+      ]);
+    }
   }
 
   /**
@@ -270,12 +291,51 @@ export class BaseApiClient {
       if (!response.ok) {
         const errorText = await response.text();
         let errorData;
+        
         try {
           errorData = JSON.parse(errorText);
+          console.log("API Error response:", errorData); // Log the full error response
         } catch (e) {
           errorData = { message: errorText || `API request failed with status ${response.status}` };
         }
-        throw new Error(errorData.message || errorData.detail || `API request failed with status ${response.status}`);
+        
+        // Create a custom error with additional properties
+        let errorMessage = "API request failed";
+        
+        // Check for the nested detail structure with message
+        if (errorData.detail && typeof errorData.detail === 'object' && errorData.detail.message) {
+          errorMessage = errorData.detail.message;
+        } 
+        // Check for direct detail string
+        else if (errorData.detail && typeof errorData.detail === 'string') {
+          errorMessage = errorData.detail;
+        }
+        // Fall back to message property or status
+        else if (errorData.message) {
+          errorMessage = errorData.message;
+        } else {
+          errorMessage = `API request failed with status ${response.status}`;
+        }
+        
+        const apiError = new Error(errorMessage) as Error & { 
+          response?: { status: number; data: any }; 
+          status?: number; 
+        };
+        
+        // Attach the response data and status for better error handling
+        apiError.response = {
+          status: response.status,
+          data: errorData
+        };
+        
+        apiError.status = response.status;
+        
+        // Add a toString method to properly display the error
+        apiError.toString = function() {
+          return `API Error (${this.response?.status}): ${this.message}`;
+        };
+        
+        throw apiError;
       }
         
       // For endpoints that don't return JSON, just return empty object
@@ -285,10 +345,47 @@ export class BaseApiClient {
       
       return await response.json() as T;
     } catch (error) {
-      if (error instanceof Error) {
+      // If it's already our custom error, just rethrow it
+      if (error instanceof Error && 'response' in error) {
         throw error;
       }
-      throw new Error('Network error occurred');
+      
+      // Handle fetch network errors
+      if (error instanceof Error) {
+        const networkError = error as Error & { response?: { status: number; data: any }; };
+        networkError.response = {
+          status: 0,
+          data: { message: error.message }
+        };
+        networkError.toString = function() {
+          return `Network Error: ${this.message}`;
+        };
+        throw networkError;
+      }
+      
+      // Generic error handling
+      const genericError = new Error('Network error occurred') as Error & { response?: { status: number; data: any }; };
+      genericError.response = {
+        status: 0,
+        data: { message: 'Unknown network error' }
+      };
+      genericError.toString = function() {
+        return `Network Error: ${this.message}`;
+      };
+      throw genericError;
     }
+  }
+
+  // Helper method to safely access chrome storage
+  private getChromeStorage(): ChromeStorage | null {
+    // Check if we're in a browser environment with chrome.storage
+    if (typeof chrome !== 'undefined') {
+      // Cast to any first to avoid TypeScript errors
+      const chromeAny = chrome as any;
+      if (chromeAny && chromeAny.storage) {
+        return chromeAny.storage as ChromeStorage;
+      }
+    }
+    return null;
   }
 } 

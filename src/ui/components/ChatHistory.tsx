@@ -5,7 +5,7 @@ import DescriptionIcon from '@mui/icons-material/Description';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { SQLResultsModal } from './SQLResultsModal';
-import { VisualizationRenderer } from './VisualizationRenderer';
+import VisualizationRenderer from './VisualizationRenderer';
 
 interface Message {
   id: string;

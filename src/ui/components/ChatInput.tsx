@@ -1,4 +1,3 @@
-
 import React, { useState, FormEvent } from 'react';
 import { Button } from './button';
 import { Send } from 'lucide-react';
@@ -41,17 +40,16 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           value={message}
           onChange={handleMessageChange}
           placeholder="Ask a question about your data..."
-          rows={3}
           disabled={loading}
           className={cn(
-            "flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
-            "rounded-r-none"
+            "flex h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+            "rounded-r-none resize-none overflow-y-auto"
           )}
         />
         <Button
           type="submit"
           disabled={loading || !message.trim()}
-          className="rounded-l-none self-stretch px-8"
+          className="rounded-l-none h-[80px] px-8"
         >
           <Send className="h-4 w-4" />
           <span className="sr-only">Send message</span>
