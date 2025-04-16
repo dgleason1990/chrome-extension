@@ -104,6 +104,10 @@ export interface QueryResponse {
   summary?: string;
   full_reasoning?: string;
   visualization_code?: string;
+  detail?: {
+    answer?: string;
+    reasoning?: string;
+  };
 }
 
 /**

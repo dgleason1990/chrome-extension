@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from "react";
-import { ChatInput } from "./Chat/ChatInput";
-import { ChatHistory } from "./Chat/ChatHistory";
-import { VisualizationRenderer } from "./Visualization/VisualizationRenderer";
+import { ChatInput, ChatHistory, VisualizationRenderer } from "../ui/components";
 import { useAuth } from "../lib/hooks/useAuth";
 import apiClient from "../lib/api/api-client";
 import { useStorage } from "../lib/hooks/useStorage";
-import { cn } from "@/lib/utils";
+import { Button } from "../ui/components/button";
+import { Input } from "../ui/components/input";
+import { Label } from "../ui/components/label";
+import { Shield, ShieldOff } from "lucide-react";
+import { Box, CircularProgress, Typography } from "@mui/material";
 
 interface Message {
   id: string;
@@ -34,13 +36,20 @@ const SidePanel: React.FC = () => {
   const [executeSQL, setExecuteSQL] = useStorage<boolean>("executeSQLEnabled", true);
   const [persistentSqlResults, setPersistentSqlResults] = useState<Record<string, unknown>[]>([]);
 
+  // Keep a local reference of the messages to ensure we're working with the latest state
+  const messagesRef = React.useRef(messages);
+  
+  // Update the ref whenever messages change
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
   useEffect(() => {
     const loadDatasets = async () => {
       if (isAuthenticated) {
         try {
           const availableDatasets = await apiClient.query.getDatasets();
           setDatasets(availableDatasets);
-          // Set first dataset as default if we have datasets and none is selected
           if (availableDatasets.length > 0 && !selectedDataset) {
             setSelectedDataset(availableDatasets[0]);
           }
@@ -62,7 +71,11 @@ const SidePanel: React.FC = () => {
       timestamp: new Date().toISOString(),
     };
 
-    setMessages([...messages, newMessage]);
+    // Use the ref to get the latest messages
+    const currentMessages = messagesRef.current;
+    // Create new array with the current messages plus the new message
+    const updatedMessages = [...currentMessages, newMessage];
+    setMessages(updatedMessages);
   };
 
   const handleSendMessage = async (message: string) => {
@@ -76,36 +89,82 @@ const SidePanel: React.FC = () => {
     
     setLoading(true);
 
-    // Add user message to chat
     addMessage({
       type: "user",
       content: message,
     });
 
     try {
-      // Send request to /generate-sql endpoint
       const response = await apiClient.query.generateSql({
         query: message,
         dataset_name: selectedDataset,
         execute: executeSQL,
-        sql_results: persistentSqlResults || [], // Include previous results if available
+        sql_results: persistentSqlResults || [],
       });
 
-      // Add system response to chat
-      addMessage({
-        type: "system",
-        content: response.summary || "Query processed successfully",
-        metadata: {
-          queryResponse: response,
-        },
-      });
-
-      // If new SQL results are available, update the persistent results
       if (response.sql_results && response.sql_results.length > 0) {
+        // Update persistentSqlResults before adding the message
         setPersistentSqlResults(response.sql_results);
       }
 
-      // If visualization code is available, set it for rendering
+      // Check if response contains an error detail
+      if (response.detail && response.detail.answer) {
+        // Display the error message from detail.answer
+        addMessage({
+          type: "system",
+          content: response.detail.answer || "An error occurred",
+          // Include SQL results and visualization if available
+          metadata: {
+            ...(response.sql_results && response.sql_results.length > 0 ? {
+              sqlResults: response.sql_results
+            } : {}),
+            ...(response.visualization_code && response.sql_results ? {
+              visualization: {
+                code: response.visualization_code,
+                data: response.sql_results
+              }
+            } : {})
+          }
+        });
+      } 
+      else if (response.query_type === "visualization" && response.visualization_code) {
+          // Update message state with visualization code
+          const visualizationMessage = {
+            type: "system" as const,
+            content: "Here's a visualization of your data:",
+            metadata: {
+              visualization: {
+                code: response.visualization_code,
+                data: persistentSqlResults || []
+              },
+              query_type: "visualization"
+            }
+          };
+          addMessage(visualizationMessage);
+      }
+      else {
+        // Normal response handling
+        addMessage({
+          type: "system",
+          content: response.summary || "Query processed successfully",
+          // Include SQL results and visualization if available
+          metadata: {
+            ...(response.sql_results && response.sql_results.length > 0 ? {
+              sqlResults: response.sql_results,
+              queryResponse: response
+            } : {}),
+            ...(response.visualization_code && response.sql_results ? {
+              visualization: {
+                code: response.visualization_code,
+                data: response.sql_results
+              }
+            } : {})
+          }
+        });
+      }
+
+      // Visualization is now included in the message metadata, no need to set it separately
+      // Keep this for backward compatibility with existing functionality
       if (response.visualization_code && response.sql_results) {
         setCurrentVisualization({
           code: response.visualization_code,
@@ -123,8 +182,8 @@ const SidePanel: React.FC = () => {
     }
   };
 
-  const handleDatasetChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setSelectedDataset(e.target.value);
+  const handleDatasetChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    setSelectedDataset(event.target.value);
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -149,11 +208,8 @@ const SidePanel: React.FC = () => {
   const handleLogout = async () => {
     try {
       await logout();
-      // Clear messages when logging out
       setMessages([]);
-      // Clear visualization when logging out
       setCurrentVisualization(null);
-      // Clear persisted SQL results when logging out
       setPersistentSqlResults([]);
     } catch (error) {
       console.error("Logout error:", error);
@@ -162,151 +218,133 @@ const SidePanel: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="side-panel-container">
-        <div className="flex items-center justify-center h-full">
-          <div className="text-center">
-            <div className="animate-pulse-gentle text-lg mb-2">Loading...</div>
-          </div>
-        </div>
-      </div>
+      <Box sx={{ 
+        height: '100vh', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center' 
+      }}>
+        <CircularProgress />
+        <Typography variant="body1" sx={{ ml: 2 }}>
+          Loading...
+        </Typography>
+      </Box>
     );
   }
 
   if (!isAuthenticated) {
     return (
-      <div className="side-panel-container">
-        <div className="side-panel-header">
-          <h2>SQL-Buddy</h2>
-        </div>
-        <div className="flex items-center justify-center flex-1 p-4">
-          <div className="glass-card w-full max-w-md">
-            <h3 className="text-lg font-medium mb-4">Sign In</h3>
-            {loginError && (
-              <div className="bg-destructive/10 text-destructive p-2 rounded mb-4 text-sm">
-                {loginError}
-              </div>
-            )}
-            <form onSubmit={handleLogin}>
-              <div className="space-y-4">
-                <div className="space-y-1">
-                  <label htmlFor="email" className="text-sm font-medium">
-                    Email
-                  </label>
-                  <input
-                    id="email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full p-2 rounded-md border border-input bg-background"
-                    required
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label htmlFor="password" className="text-sm font-medium">
-                    Password
-                  </label>
-                  <input
-                    id="password"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full p-2 rounded-md border border-input bg-background"
-                    required
-                  />
-                </div>
-                <button
-                  type="submit"
-                  className="w-full py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
-                  disabled={loginLoading}
-                >
-                  {loginLoading ? "Signing in..." : "Sign In"}
-                </button>
-              </div>
-            </form>
-          </div>
+      <div className="p-8">
+        <div className="max-w-sm mx-auto space-y-4">
+          <h2 className="text-lg font-semibold text-center mb-4">Sign In</h2>
+          
+          {loginError && (
+            <div className="bg-destructive/15 text-destructive text-sm p-3 rounded-md">
+              {loginError}
+            </div>
+          )}
+          
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email">Email Address</Label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+
+            <Button 
+              type="submit" 
+              className="w-full"
+              disabled={loginLoading}
+            >
+              {loginLoading ? "Signing in..." : "Sign In"}
+            </Button>
+          </form>
         </div>
       </div>
     );
   }
-
+  console.log("messages:", messages)
   return (
-    <div className="side-panel-container">
-      <div className="side-panel-header">
-        <div className="flex items-center justify-between w-full">
-          <h2 className="text-lg font-medium">SQL-Buddy</h2>
+    <div className="flex flex-col h-screen">
+      <header className="sticky top-0 z-10 bg-background border-b p-4">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-semibold">SQL-Buddy</h1>
           
-          {/* Dataset selector in the center */}
           {datasets.length > 0 && (
-            <div className="flex-1 mx-4 max-w-[180px]">
+            <div className="flex-1 mx-4">
+              <Label htmlFor="dataset-select" className="sr-only">Dataset</Label>
               <select
+                id="dataset-select"
                 value={selectedDataset}
                 onChange={handleDatasetChange}
-                className={cn(
-                  "w-full p-1 text-sm rounded-md border border-input",
-                  "bg-background focus:outline-none focus:ring-1 focus:ring-primary"
-                )}
+                className="w-full max-w-[200px] h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               >
                 <option value="" disabled>Select dataset</option>
                 {datasets.map((dataset) => (
-                  <option key={dataset} value={dataset}>
-                    {dataset}
-                  </option>
+                  <option key={dataset} value={dataset}>{dataset}</option>
                 ))}
               </select>
             </div>
           )}
           
-          <div className="flex items-center space-x-3">
-            <div className="user-info text-xs text-muted-foreground hidden sm:block">
-              {user && (user.name || user.email)}
+          {isAuthenticated ? (
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-muted-foreground hidden sm:inline">
+                {user?.name || user?.email}
+              </span>
+              <Button variant="outline" size="sm" onClick={handleLogout}>
+                Logout
+              </Button>
             </div>
-            <button
-              onClick={handleLogout}
-              className="text-xs px-2 py-1 text-gray-600 hover:text-gray-900 border border-gray-300 rounded hover:bg-gray-100 transition-colors"
-            >
-              Logout
-            </button>
+          ) : null}
+        </div>
+      </header>
+
+      <main className="flex-1 overflow-hidden">
+        <div className="h-full flex flex-col">
+          <div className="flex-1 overflow-y-auto p-4">
+            <ChatHistory messages={messages} />
+          </div>
+
+          <div className="border-t bg-background p-4">
+            <div className="flex items-center gap-2 mb-4">
+              <Button
+                variant={executeSQL ? "default" : "outline"}
+                size="sm"
+                onClick={toggleExecuteSQL}
+                className="gap-2"
+              >
+                {executeSQL ? <Shield className="h-4 w-4" /> : <ShieldOff className="h-4 w-4" />}
+                Trust Your SQL-Buddy
+              </Button>
+            </div>
+            
+            <ChatInput
+              onSendMessage={handleSendMessage}
+              loading={loading}
+              executeSQL={executeSQL}
+            />
           </div>
         </div>
-      </div>
-
-      <div className="chat-container">
-        <ChatHistory messages={messages} />
-      </div>
-
-      {currentVisualization && (
-        <div className="visualization-container">
-          <h3 className="text-sm font-medium mb-2">Visualization</h3>
-          <VisualizationRenderer
-            code={currentVisualization.code}
-            data={currentVisualization.data}
-          />
-        </div>
-      )}
-
-      {/* Trust mode button */}
-      <div className="px-4 pt-2 pb-0">
-        <div 
-          onClick={toggleExecuteSQL}
-          className={`text-sm cursor-pointer select-none px-3 py-2 rounded border text-center ${
-            executeSQL 
-              ? "text-green-600 font-medium border-green-200 bg-green-50" 
-              : "text-gray-500 border-gray-200 bg-gray-50"
-          }`}
-        >
-          Trust Your SQL-Buddy
-        </div>
-      </div>
-
-      <div className="input-container">
-        <ChatInput
-          onSendMessage={handleSendMessage}
-          loading={loading}
-          executeSQL={executeSQL}
-        />
-      </div>
+      </main>
     </div>
   );
 };
 
-export default SidePanel; 
+export default SidePanel;
