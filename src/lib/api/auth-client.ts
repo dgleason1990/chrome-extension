@@ -73,7 +73,10 @@ export class AuthClient extends BaseApiClient {
   startOAuthAuth(provider: string = 'google', options: OAuthOptions = {}): void {
     // Get the redirect URL specific to Chrome extension
     const callbackUrl = chrome.identity.getRedirectURL("oauth-callback");
-
+    
+    // Generate a random state parameter for security
+    const state = this.generateRandomState();
+    
     // Build the URL with query parameters
     const params = new URLSearchParams();
 
@@ -82,9 +85,13 @@ export class AuthClient extends BaseApiClient {
     }
 
     params.append('redirect_uri', callbackUrl);
+    params.append('state', state);
+
+    // Store state temporarily to validate when the callback returns
+    chrome.storage.local.set({ [`oauth_state_${state}`]: true });
 
     const authUrl = `${this.getBaseUrl()}/auth/login/${provider.toLowerCase()}?${params.toString()}`;
-
+    
     // Launch the web auth flow for Chrome extension
     chrome.identity.launchWebAuthFlow(
       {
@@ -97,30 +104,70 @@ export class AuthClient extends BaseApiClient {
           return;
         }
 
-        // Extract tokens from redirect URL
-        const url = new URL(redirectUrl);
-        const hashParams = new URLSearchParams(url.hash.substring(1));
+        try {
+          // Extract tokens from redirect URL
+          const url = new URL(redirectUrl);
+          
+          // Check if the URL contains a hash or query parameters
+          const hashParams = new URLSearchParams(url.hash.substring(1));
+          const queryParams = new URLSearchParams(url.search);
+          
+          // Try to get tokens from hash first (most common)
+          let tokenData: Token = {
+            access_token: hashParams.get('access_token') || '',
+            token_type: 'bearer',
+            refresh_token: hashParams.get('refresh_token') || undefined,
+            expires_in: parseInt(hashParams.get('expires_in') || '3600', 10)
+          };
+          
+          // If no access token in hash, check query parameters
+          if (!tokenData.access_token) {
+            tokenData = {
+              access_token: queryParams.get('access_token') || '',
+              token_type: 'bearer',
+              refresh_token: queryParams.get('refresh_token') || undefined,
+              expires_in: parseInt(queryParams.get('expires_in') || '3600', 10)
+            };
+          }
 
-        const tokenData = {
-          access_token: hashParams.get('access_token'),
-          refresh_token: hashParams.get('refresh_token'),
-          expires_in: parseInt(hashParams.get('expires_in') || '3600', 10),
-          token_type: 'bearer',
-        };
+          // Verify we have an access token
+          if (!tokenData.access_token) {
+            console.error('No access token received from OAuth');
+            
+            // Check for error information in the URL
+            const error = queryParams.get('error') || hashParams.get('error');
+            const errorDescription = queryParams.get('error_description') || hashParams.get('error_description');
+            
+            if (error) {
+              console.error(`OAuth error: ${error}${errorDescription ? ': ' + errorDescription : ''}`);
+            }
+            
+            return;
+          }
 
-        if (!tokenData.access_token) {
-          console.error('No access token received from OAuth');
-          return;
+          // Set the tokens in the API client
+          this.setAuthTokens(tokenData);
+
+          // Dispatch a custom event to notify about successful authentication
+          const authEvent = new CustomEvent('oauth-login-success');
+          document.dispatchEvent(authEvent);
+        } catch (error) {
+          console.error('Error processing OAuth redirect:', error);
+        } finally {
+          // Clean up stored state
+          chrome.storage.local.remove([`oauth_state_${state}`]);
         }
-
-        // Set the tokens in the API client
-        this.setAuthTokens(tokenData as Token);
-
-        // Dispatch a custom event to notify about successful authentication
-        const authEvent = new CustomEvent('oauth-login-success');
-        document.dispatchEvent(authEvent);
       }
     );
+  }
+
+  /**
+   * Generate a random state string for CSRF protection
+   */
+  private generateRandomState(): string {
+    const array = new Uint8Array(24);
+    window.crypto.getRandomValues(array);
+    return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
   }
 
   /**

@@ -95,7 +95,6 @@ export const ChatHistory: React.FC<ChatHistoryProps> = ({ messages }) => {
     <>
       <Box sx={{ p: 2 }}>
         {messages.map((message) => (
-          console.log("metadata:", message.metadata),
           message.type === 'user' ? (
             <UserMessage key={message.id} elevation={1}>
               <Box display="flex" alignItems="center" mb={1}>

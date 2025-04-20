@@ -1,6 +1,6 @@
 {
   "name": "sql-chat-extension",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Chrome extension for SQL-Buddy with visualizations",
   "main": "dist/background.js",
   "scripts": {

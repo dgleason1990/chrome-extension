@@ -77,6 +77,12 @@ export class BaseApiClient {
         access_token: token.access_token,
         refresh_token: token.refresh_token || null,
         token_expiry: this.tokenExpiry,
+      }, () => {
+        if (chrome.runtime.lastError) {
+          console.error('Error saving tokens to storage:', chrome.runtime.lastError);
+        } else {
+          console.log('Tokens successfully saved to storage');
+        }
       });
     }
   }
@@ -95,6 +101,7 @@ export class BaseApiClient {
         ['access_token', 'refresh_token', 'token_expiry'],
         (result) => {
           if (result.access_token) {
+            console.log('Retrieved token from storage:', result.access_token ? 'token-present' : 'no-token');
             this.accessToken = result.access_token;
             this.refreshToken = result.refresh_token;
             this.tokenExpiry = result.token_expiry;
@@ -106,6 +113,7 @@ export class BaseApiClient {
 
             resolve(true);
           } else {
+            console.log('No token found in storage');
             resolve(false);
           }
         }
@@ -202,9 +210,24 @@ export class BaseApiClient {
   }
 
   /**
+   * Verify and rehydrate token from storage before making request
+   * This ensures we always have the latest token from storage
+   */
+  protected async ensureTokenFromStorage(): Promise<boolean> {
+    if (!this.accessToken) {
+      console.log('No access token in memory, checking storage');
+      return this.initAuthFromStorage();
+    }
+    return true;
+  }
+
+  /**
    * Helper method to handle API requests with automatic token refresh
    */
   protected async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    // Always check for token in storage before making a request
+    await this.ensureTokenFromStorage();
+    
     // Check if this is a public endpoint that doesn't require authentication
     const isPublicEndpoint = 
       endpoint.includes('/auth/token') || 
@@ -214,17 +237,20 @@ export class BaseApiClient {
     
     // Check for missing auth token when it should be present
     if (!this.accessToken && !isPublicEndpoint && endpoint !== '/openapi.json') {
+      console.error('Authentication required: No accessToken available for request to', endpoint);
       // Notify listeners about missing authentication
       BaseApiClient.notifyAuthError();
-      throw new Error('Authentication required');
+      throw new Error('Authentication required: No access token');
     }
     
     // Check if token needs refreshing
     if (this.accessToken && this.isTokenExpired() && !isPublicEndpoint && endpoint !== '/openapi.json') {
+      console.log('Token expired, attempting refresh');
       const refreshed = await this.refreshAccessToken();
       if (!refreshed && !options.headers?.['skipAuthRefresh']) {
+        console.error('Authentication required: Token refresh failed');
         BaseApiClient.notifyAuthError();
-        throw new Error('Authentication required');
+        throw new Error('Authentication required: Token refresh failed');
       }
     }
     
@@ -234,6 +260,7 @@ export class BaseApiClient {
     delete requestHeaders['skipAuthRefresh'];
     
     const url = `${this.baseUrl}${endpoint}`;
+    console.log('Making API request to:', endpoint, 'with token:', this.accessToken ? 'present' : 'missing');
     
     try {
       // Determine whether to include credentials
@@ -267,17 +294,17 @@ export class BaseApiClient {
             // If still getting 401 after refresh, notify auth error
             if (response.status === 401) {
               BaseApiClient.notifyAuthError();
-              throw new Error('Authentication required');
+              throw new Error('Authentication required3');
             }
           } else {
             // Token refresh failed
             BaseApiClient.notifyAuthError();
-            throw new Error('Authentication required');
+            throw new Error('Authentication required4');
           }
         } else if (!isPublicEndpoint) {
           // No refresh token or already tried refreshing
           BaseApiClient.notifyAuthError();
-          throw new Error('Authentication required');
+          throw new Error('Authentication required5');
         }
       }
 

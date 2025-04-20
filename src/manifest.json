@@ -1,6 +1,6 @@
 {
   "name": "SQL-Buddy Extension",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "manifest_version": 3,
   "description": "Chat interface for SQL generation with visualizations",
   "permissions": ["storage", "identity", "sidePanel"],
@@ -19,12 +19,15 @@
     "service_worker": "background.js"
   },
   "host_permissions": [
-    "http://127.0.0.1:8000/*",
-    "https://api.sql-buddy.com/*"
+    "https://api.sql-buddy.com/*",
+    "http://127.0.0.1:8000/*"
   ],
   "icons": {
     "16": "assets/icons/icon16.png",
     "48": "assets/icons/icon48.png",
     "72": "assets/icons/icon72.png"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://api.sql-buddy.com https://accounts.google.com https://www.googleapis.com http://127.0.0.1:8000;"
   }
 }

@@ -63,6 +63,7 @@ interface VisualizationRendererProps {
 }
 
 const VisualizationRenderer: React.FC<VisualizationRendererProps> = ({ code, data }) => {
+
   const theme = useTheme();
   const chartRef = useRef<HTMLCanvasElement>(null);
   const chartInstance = useRef<Chart | null>(null);
@@ -200,7 +201,6 @@ const VisualizationRenderer: React.FC<VisualizationRendererProps> = ({ code, dat
             if (scale && typeof scale === 'object') {
               const scaleObj = scale as ChartScale;
               if (scaleObj.type === 'time') {
-                console.log(`Converting ${key} axis from time to category scale`);
                 scaleObj.type = 'category';
               }
             }
@@ -227,7 +227,6 @@ const VisualizationRenderer: React.FC<VisualizationRendererProps> = ({ code, dat
             }
           });
           
-          console.log('Creating chart with config:', JSON.stringify(updatedConfig).substring(0, 200) + '...');
           
           // Create chart on the fresh canvas
           chartInstance.current = new Chart(ctx, updatedConfig);

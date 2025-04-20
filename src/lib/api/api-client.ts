@@ -2,8 +2,11 @@ import { BaseApiClient } from './base-client';
 import { AuthClient } from './auth-client';
 import { QueryClient } from './query-client';
 
-// API base URL - development server
-const baseUrl = 'http://127.0.0.1:8000';
+// API base URL
+// In production, use your deployed API endpoint
+const baseUrl = process.env.NODE_ENV === 'production' 
+  ? 'https://api.sql-buddy.com'  // Production server
+  : 'http://127.0.0.1:8000';     // Development server
 
 // Initialize base API client
 const baseClient = new BaseApiClient(baseUrl);

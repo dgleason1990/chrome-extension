@@ -51,7 +51,6 @@ chrome.runtime.onMessage.addListener((
   }
   
   if (message.type === 'LOG_MESSAGE') {
-    console.log('Side Panel Log:', (message as LogMessage).content);
     sendResponse({ success: true });
   }
 }); 
